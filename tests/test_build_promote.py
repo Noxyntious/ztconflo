@@ -115,3 +115,14 @@ def test_native_entries_need_the_repository(tmp_path):
     with pytest.raises(Exit) as err:
         fetch_kernel(Runner(dry_run=True, log=lambda _: None), e, Settings(), tmp_path)
     assert err.value.code == Exit.BUILD_FAILED
+
+
+
+def test_pmbootstrap_device_follows_the_device_package():
+    from ztconflo.build import pmbootstrap_device
+    from ztconflo.registry import Entry
+    base = {"device": {"codename": "xiaomi-daisy", "origin": "pmos", "status": "untested"}, "boot": {}, "kernel": {}}
+    generic = Entry({**base, "source": {"pmos": {"device_pkg": "device-qcom-msm8953"}}})
+    assert pmbootstrap_device(generic) == "qcom-msm8953"
+    assert pmbootstrap_device(Entry({**base, "source": {"pmos": {}}})) == "xiaomi-daisy"
+    assert pmbootstrap_device(Entry(base)) == "xiaomi-daisy"

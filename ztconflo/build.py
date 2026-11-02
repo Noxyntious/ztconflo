@@ -42,6 +42,14 @@ def _pmbootstrap_config(work: Path, aports: Path, codename: str) -> Path:
     return cfg
 
 
+def pmbootstrap_device(entry: Entry) -> str:
+    """The pmaports device pmbootstrap installs: the entry's device package, so a
+    phone built from a generic port (xiaomi-daisy from device-qcom-msm8953) gets
+    that port, else the codename."""
+    pkg = entry.get("source", {}).get("pmos", {}).get("device_pkg", "")
+    return pkg.removeprefix("device-") or entry.codename
+
+
 def fetch_kernel(run: Runner, entry: Entry, settings: Settings, tree: Path, step: str = "1. kernel side") -> dict:
     """Step 1: kernel, modules, firmware and initramfs, unpacked under `tree`."""
     run.step(step)
@@ -54,7 +62,8 @@ def fetch_kernel(run: Runner, entry: Entry, settings: Settings, tree: Path, step
     if not run.dry_run and src["pmaports_commit"] not in ("", "unknown") and pm.commit() != src["pmaports_commit"]:
         pm.checkout(src["pmaports_commit"])
     work = settings.pmbootstrap_work
-    cfg = _pmbootstrap_config(work, settings.pmaports, entry.codename) if not run.dry_run else work / "pmbootstrap.cfg"
+    pmb_device = pmbootstrap_device(entry)
+    cfg = _pmbootstrap_config(work, settings.pmaports, pmb_device) if not run.dry_run else work / "pmbootstrap.cfg"
     base = ["pmbootstrap", "-c", cfg, "--work", work, "--aports", settings.pmaports, "-y"]
     pkgs = [src["kernel_pkg"], *src.get("firmware_pkgs", [])]
     boot_pkg = flash.lk2nd(entry)
@@ -80,7 +89,7 @@ def fetch_kernel(run: Runner, entry: Entry, settings: Settings, tree: Path, step
         lk2nd_img = bl / "boot/lk2nd.img"
         if not lk2nd_img.is_file():
             raise Exit(Exit.BUILD_FAILED, f"{boot_pkg} has no boot/lk2nd.img")
-    chroot = work / f"chroot_rootfs_{entry.codename}"
+    chroot = work / f"chroot_rootfs_{pmb_device}"
     initramfs = chroot / "boot/initramfs"
     if not initramfs.is_file():
         raise Exit(Exit.BUILD_FAILED, f"no initramfs at {initramfs} after pmbootstrap install")
