@@ -30,6 +30,8 @@ GENERIC_OVERLAY = [
     "etc/systemd/network/10-zboot-usb.network",
     "etc/systemd/network/20-wlan.network",
     "etc/systemd/system/zboot-usb-gadget.service",
+    # ztMETRO takes the power key: without this logind powers the phone off on a short press
+    "etc/systemd/logind.conf.d/10-zboot.conf",
     "etc/tmpfiles.d/99-ztos-compat.conf",
     "usr/local/sbin/zboot-session",
     "usr/local/sbin/zboot-usb-gadget",

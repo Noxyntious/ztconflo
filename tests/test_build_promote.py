@@ -115,3 +115,14 @@ def test_native_entries_need_the_repository(tmp_path):
     with pytest.raises(Exit) as err:
         fetch_kernel(Runner(dry_run=True, log=lambda _: None), e, Settings(), tmp_path)
     assert err.value.code == Exit.BUILD_FAILED
+
+
+
+def test_dry_run_installs_the_logind_power_key_drop_in(tmp_path):
+    # without it logind powers the phone off on a short press of the power key
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    assert any("install" in c and c.endswith("etc/systemd/logind.conf.d/10-zboot.conf") for c in flat)
