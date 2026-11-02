@@ -16,7 +16,8 @@ KEYRING_URL = "http://mirror.archlinuxarm.org/aarch64/core/"
 DEFAULT_USER = "alarm"        # what ztOSMobile's session scripts and sudoers expect
 
 BASE = ["base", "systemd", "archlinuxarm-keyring", "sudo", "openssh", "networkmanager", "greetd",
-        "mesa", "vulkan-icd-loader", "pipewire", "pipewire-pulse", "wireplumber", "modemmanager"]
+        "mesa", "vulkan-icd-loader", "pipewire", "pipewire-pulse", "wireplumber", "modemmanager",
+        "python-gobject"]          # ztos-iald (ztOSIAL) is Python over Gio
 # what ztmetro/Makefile and the SDK need to build and run
 BUILD_DEPS = ["base-devel", "wlroots0.20", "wayland", "wayland-protocols", "libxkbcommon", "cairo", "pango",
               "librsvg", "pixman", "libdrm", "libpulse", "gdk-pixbuf2", "systemd-libs"]
@@ -118,10 +119,18 @@ def ztmetro_from_source(run: Runner, root: Path, src: Path, jobs: int) -> None:
         raise Exit(Exit.BUILD_FAILED, f"no ztOSMobile checkout at {src} (use --ztos-src)")
     dest = root / "usr/src/ztos"
     run.run(["mkdir", "-p", dest], root=True)
-    for part in ("ztmetro", "sdk", "os"):
+    # ial/: ztOSIAL, built first so ztmetro/Makefile finds ztos-ial.pc (HAVE_ZTOS_IAL)
+    parts = ["ial"] if run.dry_run or (src / "ial/Makefile").is_file() else []
+    for part in (*parts, "ztmetro", "sdk", "os"):
         run.run(["rsync", "-a", "--delete", "--exclude", "ref", "--exclude", "__pycache__", "--exclude", "*.o",
                  f"{src / part}/", f"{dest / part}/"], root=True)
     chroot(run, root, f"""
+if [ -f /usr/src/ztos/ial/Makefile ]; then
+	cd /usr/src/ztos/ial
+	make clean >/dev/null 2>&1 || true
+	make
+	make install
+fi
 cd /usr/src/ztos/ztmetro
 make clean >/dev/null 2>&1 || true
 make -j{jobs}
@@ -176,6 +185,7 @@ systemctl enable greetd NetworkManager sshd systemd-networkd >/dev/null
 for k in /usr/lib/modules/*/; do depmod -a "$(basename "$k")"; done
 systemctl enable ModemManager >/dev/null 2>&1 || echo "note: no unit ModemManager in this root"
 systemctl enable zboot-usb-gadget >/dev/null 2>&1 || true
+systemctl enable ztos-iald >/dev/null 2>&1 || echo "note: no unit ztos-iald in this root"
 # ztMETRO's clocks: without it the GPU rests at its lowest step and every animation lags
 systemctl enable zrnperfd >/dev/null 2>&1 || echo "note: no unit zrnperfd in this root"
 {''.join(f'systemctl enable {d} >/dev/null 2>&1 || echo "note: no unit {d} in this root"' + chr(10) for d in daemons)}
