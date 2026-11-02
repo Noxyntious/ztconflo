@@ -132,6 +132,12 @@ cp -a /usr/src/ztos/sdk/runtime/. /usr/lib/ztos/
 
 def overlay(run: Runner, root: Path, src: Path, device_overlay: Path | None) -> None:
     """The generic ztOS files, then the phone's own overlay/ last (it wins)."""
+    # os/overlay: what makes the system ztOS on every phone (BETA-1 on): the user
+    # templates and ztos-user-dropins (greetd as the phone's user), fonts, skel,
+    # updater, store. Before configure, so useradd copies skel and the dropins run
+    system = src / "os/overlay"
+    if run.dry_run or system.is_dir():
+        run.run(["cp", "-a", "--no-preserve=ownership", f"{system}/.", root], root=True)
     for rel in GENERIC_OVERLAY:
         f = src / "rootfs/overlay" / rel
         if run.dry_run or f.exists():
