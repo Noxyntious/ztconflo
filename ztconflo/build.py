@@ -170,6 +170,8 @@ def build(res: Resolution, settings: Settings, registry: Registry, run: Runner) 
     run.step("3b. ztMETRO, the SDK and the system apps, from source")
     rootfs.ztmetro_from_source(run, root, settings.ztos_src, settings.jobs)
     rootfs.overlay(run, root, settings.ztos_src, entry.folder / "overlay" if entry.folder else None)
+    run.step("3c. Android apps (ztOSAndroidRuntimeV1: ATL)")
+    rootfs.android_runtime(run, root, settings.ztos_src)
 
     run.step("4. configure")
     rootfs.configure(run, root, entry, Path.home() / ".ssh/id_ed25519.pub")

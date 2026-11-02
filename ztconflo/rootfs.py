@@ -139,6 +139,25 @@ cp -a /usr/src/ztos/sdk/runtime/. /usr/lib/ztos/
 """)
 
 
+def android_runtime(run: Runner, root: Path, src: Path) -> None:
+    """ztOSAndroidRuntimeV1 (ATL, ART, bionic_translation: Android apps as
+    Linux processes, without binder), as ztOSMobile's installer ships it: its
+    own android/atl/install-runtime.sh checks the bundle's hashes and CPU and
+    installs the Arch packages it needs. The bundle stays on the phone, where
+    ztos-android-dependencies installs it again."""
+    packages = src / "prebuilts/ztOSAndroidRuntimeV1/packages"
+    script = src / "android/atl/install-runtime.sh"
+    if not run.dry_run and not ((packages / "SHA256SUMS").is_file() and script.is_file()):
+        run.log("    no prebuilts/ztOSAndroidRuntimeV1 in the ztOSMobile checkout: Android apps (ATL) left out")
+        return
+    keep = root / "usr/local/share/ztos/android-runtime"
+    run.run(["mkdir", "-p", keep], root=True)
+    run.run(["rsync", "-a", "--delete", "--chown=0:0", f"{packages}/", f"{keep / 'packages'}/"], root=True)
+    run.run(["install", "-m", "755", script, keep / "install-runtime.sh"], root=True)
+    chroot(run, root, "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
+                      "/usr/local/share/ztos/android-runtime/packages")
+
+
 def overlay(run: Runner, root: Path, src: Path, device_overlay: Path | None) -> None:
     """The generic ztOS files, then the phone's own overlay/ last (it wins)."""
     # os/overlay: what makes the system ztOS on every phone (BETA-1 on): the user

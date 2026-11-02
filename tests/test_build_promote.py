@@ -143,3 +143,23 @@ def test_dry_run_builds_ztosial_before_ztmetro(tmp_path):
     script = next(c for c in flat if "cd /usr/src/ztos/ztmetro" in c)
     assert script.index("cd /usr/src/ztos/ial") < script.index("cd /usr/src/ztos/ztmetro")
     assert any("systemctl enable ztos-iald" in c for c in flat)
+
+
+def test_dry_run_installs_the_android_runtime(tmp_path):
+    # ATL runs Android apps without binder: the ztOS installer ships it, and so must a ztConflo build
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    copy = next(i for i, c in enumerate(flat) if "ztOSAndroidRuntimeV1/packages/" in c)
+    install = next(i for i, c in enumerate(flat) if "android-runtime/install-runtime.sh /usr/local" in c)
+    assert copy < install
+
+
+def test_without_the_android_runtime_the_build_goes_on(tmp_path):
+    from ztconflo.rootfs import android_runtime
+    lines = []
+    run = Runner(dry_run=False, log=lines.append)
+    android_runtime(run, tmp_path / "root", tmp_path / "old-checkout")
+    assert run.commands == [] and "ATL" in lines[0]
