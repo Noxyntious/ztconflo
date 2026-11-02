@@ -129,3 +129,17 @@ def test_dry_run_installs_the_ztos_system_overlay(tmp_path):
     copy = next(i for i, c in enumerate(flat) if "cp -a" in c and "os/overlay/." in c)
     config = next(i for i, c in enumerate(flat) if "useradd" in c)
     assert copy < config
+
+
+
+def test_dry_run_builds_ztosial_before_ztmetro(tmp_path):
+    # ztMETRO only uses ztOSIAL when ztos-ial.pc exists as it is built
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    assert any("pacstrap" in c and "python-gobject" in c for c in flat)
+    script = next(c for c in flat if "cd /usr/src/ztos/ztmetro" in c)
+    assert script.index("cd /usr/src/ztos/ial") < script.index("cd /usr/src/ztos/ztmetro")
+    assert any("systemctl enable ztos-iald" in c for c in flat)

@@ -332,7 +332,9 @@ def test_without_gsi_the_old_pipeline_runs(tmp_path):
     run = Runner(dry_run=True, log=lambda _: None)
     build(resolve("oneplus-enchilada", reg, Pmaports(PMAPORTS)), s, reg, run)
     flat = [" ".join(c) for c in run.commands]
-    assert any("pacstrap" in c for c in flat) and not any("ztos-ial" in c for c in flat)
+    # the old pipeline installs ztOSIAL too (from --ztos-src), but runs none of
+    # the GSI's steps, such as checking the assembled root against it
+    assert any("pacstrap" in c for c in flat) and not any("ztos-ial check" in c for c in flat)
 
 
 def test_gsi_dry_run_through_the_cli(tmp_path, capsys):
