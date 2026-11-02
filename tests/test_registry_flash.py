@@ -82,3 +82,22 @@ def test_flash_needs_the_codename_typed(tmp_path, capsys):
     assert ran == [] and "Not flashed" in capsys.readouterr().out
     flash(tmp_path, entry(), ask=lambda _: "vendor-phone", run=lambda *a, **k: ran.append(a))
     assert len(ran) == 1
+
+
+def test_lk2nd_phones_with_fastboot_only_write_userdata():
+    # a Xiaomi has fastboot of its own: lk2nd is put on BOOT once by hand and
+    # stays; flash.sh must not fall back to Samsung's heimdall or write BOOT
+    s = script(entry("fastboot", lk2nd="lk2nd-msm8953"))
+    assert "heimdall" not in s
+    assert "lk2nd's fastboot" in s
+    assert "fastboot flash userdata rootfs.img" in s
+    assert "fastboot flash boot" not in s.replace("fastboot flash boot lk2nd.img", "")
+    assert "Overwrites: userdata." in s
+
+
+def test_samsung_lk2nd_phones_keep_heimdall():
+    data = entry("fastboot", lk2nd="lk2nd-msm8916")
+    data["device"]["name"] = "Samsung Galaxy J5"
+    s = script(data)
+    assert "heimdall flash --BOOT lk2nd.img" in s
+    assert "Overwrites: BOOT (lk2nd), userdata." in s

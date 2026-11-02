@@ -92,6 +92,25 @@ fi
 """
 
 
+# Phones other than Samsung's have fastboot of their own: lk2nd is put on BOOT
+# once, by hand (`fastboot flash boot lk2nd.img`, as postmarketOS does), and
+# stays there; flash.sh only waits for its fastboot and writes the disk image.
+LK2ND_FASTBOOT = r"""
+# lk2nd stays on BOOT (put there once: fastboot flash boot lk2nd.img) and boots
+# the kernel from the boot partition in rootfs.img; only {rootfs} is written.
+if ! fastboot devices 2>/dev/null | grep -q fastboot; then
+	echo "Put the phone in lk2nd's fastboot: power it off, then hold Vol-Down while pressing Power"
+	until fastboot devices 2>/dev/null | grep -q fastboot; do sleep 1; done
+fi
+"""
+
+
+def lk2nd_by_heimdall(entry: dict) -> bool:
+    """lk2nd is written by flash.sh, with heimdall or from TWRP: Samsung's
+    bootloaders have no fastboot to put it there by hand."""
+    return entry["device"]["name"].lower().startswith("samsung")
+
+
 def lk2nd(entry: dict) -> str:
     """The lk2nd package a phone needs before fastboot works, or "". Samsung
     phones on a SoC lk2nd supports, unless the entry sets boot.lk2nd itself
@@ -126,12 +145,13 @@ def script(entry: dict) -> str:
     boot = entry["boot"]
     pairs = targets(boot)
     out = HEADER.format(codename=entry["device"]["codename"], name=entry["device"]["name"],
-                        targets=", ".join((["BOOT (lk2nd)"] if lk2nd(entry) else []) +
+                        targets=", ".join((["BOOT (lk2nd)"] if lk2nd(entry) and lk2nd_by_heimdall(entry) else []) +
                                                   [p for i, p in pairs if not (lk2nd(entry) and i == "boot.img")]))
     method = boot["flash_method"]
     if method == "fastboot":
         if lk2nd(entry):
-            out += LK2ND.replace("{rootfs}", boot.get("rootfs_target", "userdata"))
+            block = LK2ND if lk2nd_by_heimdall(entry) else LK2ND_FASTBOOT
+            out += block.replace("{rootfs}", boot.get("rootfs_target", "userdata"))
             pairs = [(i, p) for i, p in pairs if i != "boot.img"]
         for image, part in pairs:
             out += f"fastboot flash {shlex.quote(part)} {shlex.quote(image)}\n"
@@ -152,7 +172,10 @@ def flash(out_dir: Path, entry: dict, ask=input, run=subprocess.run) -> None:
         if not (out_dir / "lk2nd.img").is_file():
             raise Exit(Exit.BUILD_FAILED, f"no {out_dir / 'lk2nd.img'}: run `ztconflo build "
                                           f"{entry['device']['codename']}` again")
-        pairs = [("lk2nd.img", "BOOT (heimdall)"), *((i, p) for i, p in pairs if i != "boot.img")]
+        rest = [(i, p) for i, p in pairs if i != "boot.img"]
+        pairs = [("lk2nd.img", "BOOT (heimdall)"), *rest] if lk2nd_by_heimdall(entry) else rest
+        if not lk2nd_by_heimdall(entry):
+            print("lk2nd must already be on BOOT (once: fastboot flash boot lk2nd.img); it is not written.")
     for image, part in pairs:
         print(f"  {part:<16} <- {out_dir / image}")
     for w in entry_warnings(entry):
