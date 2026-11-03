@@ -165,10 +165,12 @@ def build(res: Resolution, settings: Settings, registry: Registry, run: Runner) 
     work.mkdir(parents=True, exist_ok=True) if not run.dry_run else None
     conf = rootfs.pacman_conf(work) if not run.dry_run else work / "pacman-aarch64.conf"
     rootfs.keyring(run, work)
-    rootfs.pacstrap(run, root, conf, rootfs.packages_txt(entry.folder), settings.jobs)
+    rootfs.pacstrap(run, root, conf, rootfs.os_packages(settings.ztos_src) + rootfs.packages_txt(entry.folder),
+                    settings.jobs)
     rootfs.kernel_side(run, root, tree)
     run.step("3b. ztMETRO, the SDK and the system apps, from source")
     rootfs.ztmetro_from_source(run, root, settings.ztos_src, settings.jobs)
+    rootfs.system_apps(run, root)
     rootfs.overlay(run, root, settings.ztos_src, entry.folder / "overlay" if entry.folder else None)
     run.step("3c. Android apps (ztOSAndroidRuntimeV1: ATL)")
     rootfs.android_runtime(run, root, settings.ztos_src)

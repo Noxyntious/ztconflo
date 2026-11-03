@@ -91,7 +91,7 @@ def _fetch_keyring(dest: Path) -> Path:
 
 
 def pacstrap(run: Runner, root: Path, conf: Path, extra: list[str], jobs: int) -> None:
-    packages = BASE + BUILD_DEPS + SDK_DEPS + extra
+    packages = list(dict.fromkeys(BASE + BUILD_DEPS + SDK_DEPS + extra))     # once each, in order
     run.run(["mkdir", "-p", root], root=True)
     run.run(["pacstrap", "-C", conf, "-G", "-M", root, *packages], root=True)
 
@@ -119,7 +119,9 @@ def ztmetro_from_source(run: Runner, root: Path, src: Path, jobs: int) -> None:
     run.run(["mkdir", "-p", dest], root=True)
     # ial/: ztOSIAL, built first so ztmetro/Makefile finds ztos-ial.pc (HAVE_ZTOS_IAL)
     parts = ["ial"] if run.dry_run or (src / "ial/Makefile").is_file() else []
-    for part in (*parts, "ztmetro", "sdk", "os"):
+    # apps/: the apps ztOS ships besides its own (Music)
+    extra = ["apps"] if run.dry_run or (src / "apps").is_dir() else []
+    for part in (*parts, "ztmetro", "sdk", "os", *extra):
         run.run(["rsync", "-a", "--delete", "--exclude", "ref", "--exclude", "__pycache__", "--exclude", "*.o",
                  f"{src / part}/", f"{dest / part}/"], root=True)
     chroot(run, root, f"""
@@ -137,6 +139,41 @@ make install
 install -d /usr/lib/ztos /usr/local/lib/ztos/apps
 cp -a /usr/src/ztos/sdk/runtime/. /usr/lib/ztos/
 """)
+
+
+# ztOS's own apps, packed by its SDK and installed as ztOSMobile's installer does
+# (the default tiles start Welcome and Updates); built in the root, so the SDK's
+# GLES renderer is built for it there
+SYSTEM_APPS = ("os/apps/welcome", "os/apps/updates", "apps/music")
+BUILD_APPS = r"""
+import shutil, sys
+from pathlib import Path
+sys.path.insert(0, "/usr/src/ztos/sdk")
+from ztos_sdk import cli
+python = "%d.%d" % sys.version_info[:2]
+for folder in sys.argv[1:]:
+    project = Path("/usr/src/ztos") / folder
+    if not (project / "ztos.toml").is_file():
+        print(f"note: no {folder} in this checkout"); continue
+    p = cli.find_project(str(project))
+    shutil.copy2(cli.build(p, "aarch64", python=python), f"/usr/local/lib/ztos/apps/{p.id}")
+    shutil.copy2(project / p.icon, f"/usr/local/share/icons/hicolor/scalable/apps/{p.id}.svg")
+    Path(f"/usr/local/share/applications/{p.id}.desktop").write_text("\n".join([
+        "[Desktop Entry]", "Type=Application", f"Name={p.name}",
+        f"Comment={p.manifest['description'] or p.name}",
+        f"Exec=/usr/local/lib/ztos/apps/{p.id}",
+        f"Icon=/usr/local/share/icons/hicolor/scalable/apps/{p.id}.svg",
+        "Terminal=false", f"StartupWMClass=ztos.{p.id}", "Categories=System;", "",
+    ]))
+    print(f"app: {p.id}")
+"""
+
+
+def system_apps(run: Runner, root: Path) -> None:
+    chroot(run, root, "install -d /usr/local/lib/ztos/apps /usr/local/share/applications "
+                      "/usr/local/share/icons/hicolor/scalable/apps\n"
+                      "cd /usr/src/ztos\n"
+                      f"python3 - {' '.join(SYSTEM_APPS)} <<'PY'\n{BUILD_APPS}PY\n")
 
 
 def android_runtime(run: Runner, root: Path, src: Path) -> None:
@@ -217,8 +254,18 @@ fi
 """)
 
 
-def packages_txt(folder: Path | None) -> list[str]:
-    f = folder / "packages.txt" if folder else None
+def package_list(f: Path | None) -> list[str]:
+    """Package names, one or more per line, '#' comments."""
     if not f or not f.is_file():
         return []
     return [w for line in f.read_text().splitlines() for w in line.split("#")[0].split()]
+
+
+def packages_txt(folder: Path | None) -> list[str]:
+    return package_list(folder / "packages.txt" if folder else None)
+
+
+def os_packages(src: Path) -> list[str]:
+    """What every ztOS system carries (os/packages/common, as ztOSMobile's
+    installer installs it): the terminal, brightnessctl, the browser, Waydroid..."""
+    return package_list(src / "os/packages/common")

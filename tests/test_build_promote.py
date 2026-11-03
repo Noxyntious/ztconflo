@@ -163,3 +163,23 @@ def test_without_the_android_runtime_the_build_goes_on(tmp_path):
     run = Runner(dry_run=False, log=lines.append)
     android_runtime(run, tmp_path / "root", tmp_path / "old-checkout")
     assert run.commands == [] and "ATL" in lines[0]
+
+
+def test_dry_run_installs_ztos_packages_and_apps(tmp_path):
+    # os/packages/common is what every ztOS system carries (the default Terminal
+    # tile runs gnome-terminal); the Welcome and Updates tiles need their apps
+    src = tmp_path / "ztOSMobile"
+    (src / "os/packages").mkdir(parents=True)
+    (src / "os/packages/common").write_text("# ztOS\nbase\ngnome-terminal  # the Terminal tile\nbrightnessctl\n")
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True,
+                 ztos_src=src)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    pacstrap = next(c for c in flat if "pacstrap" in c).split()
+    assert "gnome-terminal" in pacstrap and "brightnessctl" in pacstrap
+    assert pacstrap.count("base") == 1
+    ztmetro = next(i for i, c in enumerate(flat) if "cd /usr/src/ztos/ztmetro" in c)
+    apps = next(i for i, c in enumerate(flat) if "os/apps/welcome os/apps/updates" in c)
+    assert ztmetro < apps
