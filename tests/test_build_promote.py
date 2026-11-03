@@ -204,3 +204,32 @@ def test_dry_run_installs_ztos_packages_and_apps(tmp_path):
     ztmetro = next(i for i, c in enumerate(flat) if "cd /usr/src/ztos/ztmetro" in c)
     apps = next(i for i, c in enumerate(flat) if "os/apps/welcome os/apps/updates" in c)
     assert ztmetro < apps
+
+
+def test_pacman_sandbox_follows_the_kernels_landlock(tmp_path):
+    # pacman 7 downloads nothing on a kernel without Landlock (pmOS's msm8953)
+    from ztconflo.rootfs import landlock_missing, pacman_sandbox
+    without, with_, none = tmp_path / "without", tmp_path / "with", tmp_path / "none"
+    for tree, text in ((without, "CONFIG_LSM=\"landlock,yama\"\n# CONFIG_SECURITY_LANDLOCK is not set\n"),
+                       (with_, "CONFIG_SECURITY_LANDLOCK=y\n")):
+        (tree / "boot").mkdir(parents=True)
+        (tree / "boot/config").write_text(text)
+    none.mkdir()
+    assert landlock_missing(without) is True
+    assert landlock_missing(with_) is False
+    assert landlock_missing(none) is None
+    for tree in (with_, none):     # nothing to change: no command at all
+        lines = []
+        run = Runner(dry_run=False, log=lines.append)
+        pacman_sandbox(run, tmp_path / "root", tree)
+        assert run.commands == []
+    assert "sandbox left as it is" in lines[0]
+
+
+def test_dry_run_plans_the_pacman_sandbox(tmp_path):
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    assert any("DisableSandboxFilesystem" in c and c.endswith("etc/pacman.conf") for c in flat)

@@ -108,6 +108,32 @@ def kernel_side(run: Runner, root: Path, kernel_tree: Path) -> None:
                 run.run(["cp", "-a", f"{src}/.", root / "usr" / sub], root=True)
 
 
+def landlock_missing(*trees: Path) -> bool | None:
+    """Whether the kernel in these trees lacks Landlock; None when its config
+    cannot be found."""
+    from . import contract
+    path = contract.find_config(*trees)
+    if path is None:
+        return None
+    return contract.read_config(path).get("SECURITY_LANDLOCK", "n") in ("n", "")
+
+
+def pacman_sandbox(run: Runner, root: Path, *trees: Path) -> None:
+    """pacman 7 downloads as alpm inside a Landlock sandbox and, on a kernel
+    without Landlock (pmOS's msm8953, for one), downloads nothing at all. Only
+    the filesystem part goes then (DisableSandboxFilesystem, pacman 7.1): the
+    alpm user and the syscall filter stay."""
+    missing = landlock_missing(*trees) if not run.dry_run else True
+    if missing is None:
+        run.log("    no kernel config found: pacman's download sandbox left as it is")
+        return
+    if not missing:
+        return
+    run.run(["sed", "-i", "-e", "/^#*DisableSandboxFilesystem/d", "-e",
+             r"/^\[options\]/a # ztConflo: this kernel has no Landlock, which pacman's download sandbox needs"
+             r"\nDisableSandboxFilesystem", root / "etc/pacman.conf"], root=True)
+
+
 def chroot(run: Runner, root: Path, script: str) -> None:
     run.run(["arch-chroot", root, "/bin/bash", "-euc", script], root=True)
 

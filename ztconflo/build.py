@@ -177,6 +177,7 @@ def build(res: Resolution, settings: Settings, registry: Registry, run: Runner) 
     rootfs.pacstrap(run, root, conf, rootfs.os_packages(settings.ztos_src) + rootfs.packages_txt(entry.folder),
                     settings.jobs)
     rootfs.kernel_side(run, root, tree)
+    rootfs.pacman_sandbox(run, root, tree)
     run.step("3b. ztMETRO, the SDK and the system apps, from source")
     rootfs.ztmetro_from_source(run, root, settings.ztos_src, settings.jobs)
     rootfs.system_apps(run, root)
@@ -359,6 +360,7 @@ def build_gsi(res: Resolution, settings: Settings, registry: Registry, run: Runn
         # no download sandbox, which wants Landlock from the kernel running pacman
         run.run(["arch-chroot", root, "pacman", "-S", "--needed", "--noconfirm", "--disable-sandbox",
                  *extra_pkgs], root=True)
+    rootfs.pacman_sandbox(run, root, *trees)
     rootfs.configure(run, root, entry, Path.home() / ".ssh/id_ed25519.pub")
     ial_check(run, root)
 
