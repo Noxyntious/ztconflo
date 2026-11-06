@@ -245,3 +245,33 @@ def test_pacstrap_syncs_every_repo_the_root_lists(tmp_path):
     from ztconflo.rootfs import pacman_conf
     repos = [l for l in pacman_conf(tmp_path).read_text().splitlines() if l.startswith("[") and l != "[options]"]
     assert repos == ["[core]", "[extra]", "[alarm]", "[aur]"]
+
+
+def test_dry_run_installs_the_rest_of_what_the_installer_does(tmp_path):
+    # the browser, zrn-pushd, Selawik, the SDK, the wallpapers and ringtones and
+    # the installer's services, as ztOSMobile's installer puts them on every phone
+    reg = Registry(tmp_path / "registry")
+    s = Settings(registry=reg.root, pmaports=FIX, out=tmp_path / "out", work=tmp_path / "work", dry_run=True)
+    run = Runner(dry_run=True, log=lambda _: None)
+    build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    parts = next(i for i, c in enumerate(flat) if "install-browser" in c)
+    for piece in ("android/push install", "systemctl --global enable zrn-pushd", "fonts/selawik",
+                  "/usr/local/lib/ztos-sdk", "/etc/skel/.local/share/ztos/zygote.py"):
+        assert piece in flat[parts], piece
+    assert any("rsync" in c and "android/push/" in c for c in flat[:parts])
+    media = next(i for i, c in enumerate(flat) if "ztos-media.tar.xz.part*" in c and "tar -C" in c)
+    config = next(i for i, c in enumerate(flat) if "useradd" in c)
+    assert parts < config and media < config       # skel before the user is made
+    for unit in ("systemd-resolved", "systemd-pstore", "ztos-pstore-keep", "ztoscoresensorframework",
+                 "ztos-update-check.timer"):
+        assert unit in flat[config], unit
+    assert any(c.startswith("sudo ln -sfn /run/systemd/resolve/stub-resolv.conf") for c in flat[config:])
+
+
+def test_without_ztos_media_the_build_goes_on(tmp_path):
+    from ztconflo.rootfs import media
+    lines = []
+    run = Runner(dry_run=False, log=lines.append)
+    media(run, tmp_path / "root", tmp_path / "old-checkout")
+    assert run.commands == [] and "no wallpapers" in lines[0]

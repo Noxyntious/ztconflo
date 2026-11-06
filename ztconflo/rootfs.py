@@ -4,6 +4,7 @@ firmware, ztMETRO built from the ztOSMobile sources, then configuration.
 
 Runs on an x86_64 Arch host; aarch64 programs in the new root run through
 qemu-user (binfmt), so `arch-chroot` works as on the phone."""
+import shlex
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -34,6 +35,9 @@ GENERIC_OVERLAY = [
     # ztMETRO takes the power key: without this logind powers the phone off on a short press
     "etc/systemd/logind.conf.d/10-zboot.conf",
     "etc/tmpfiles.d/99-ztos-compat.conf",
+    # the kernel log of a crash or hang, kept per boot (systemd-pstore, enabled in configure)
+    "etc/systemd/pstore.conf.d/ztos.conf",
+    "etc/systemd/system/ztos-pstore-keep.service",
     "usr/local/sbin/zboot-session",
     "usr/local/sbin/zboot-usb-gadget",
     "usr/local/bin/zboot-osk",
@@ -153,7 +157,11 @@ def ztmetro_from_source(run: Runner, root: Path, src: Path, jobs: int) -> None:
     parts = ["ial"] if run.dry_run or (src / "ial/Makefile").is_file() else []
     # apps/: the apps ztOS ships besides its own (Music)
     extra = ["apps"] if run.dry_run or (src / "apps").is_dir() else []
+    # android/push: zrn-pushd, push messages for Android apps (installer_parts)
+    extra += ["android/push"] if run.dry_run or (src / "android/push/Makefile").is_file() else []
     for part in (*parts, "ztmetro", "sdk", "os", *extra):
+        if "/" in part:
+            run.run(["mkdir", "-p", (dest / part).parent], root=True)
         run.run(["rsync", "-a", "--delete", "--exclude", "ref", "--exclude", "__pycache__", "--exclude", "*.o",
                  f"{src / part}/", f"{dest / part}/"], root=True)
     chroot(run, root, f"""
@@ -208,6 +216,54 @@ def system_apps(run: Runner, root: Path) -> None:
                       f"python3 - {' '.join(SYSTEM_APPS)} <<'PY'\n{BUILD_APPS}PY\n")
 
 
+# The rest of what ztOSMobile's installer puts on every phone
+# (installer/ztos_installer/build.py), from the checkout copied into the root;
+# each part only when the checkout has it
+INSTALLER_PARTS = r"""
+cd /usr/src/ztos
+# the browser (Superscan, on WPE WebKit)
+make -C ztmetro install-browser
+# zrn-pushd: push messages for Android apps, a user service in every session
+if [ -f android/push/Makefile ]; then
+	make -C android/push clean >/dev/null 2>&1 || true
+	make -C android/push
+	make -C android/push install
+	install -Dm644 android/push/README.md /usr/local/share/doc/zrn-pushd/README.md
+	systemctl --global enable zrn-pushd.service
+fi
+# Selawik, the fonts ztMETRO's text falls back to
+if [ -d os/fonts/selawik ]; then
+	install -d /usr/local/share/fonts/selawik
+	install -m644 os/fonts/selawik/*.ttf /usr/local/share/fonts/selawik/
+	fc-cache -f >/dev/null 2>&1 || true
+fi
+# the SDK, to build ztOS apps on the phone, and the runtime each user's
+# apps start from (skel: before configure makes the user)
+rm -rf /usr/local/lib/ztos-sdk
+cp -a sdk /usr/local/lib/ztos-sdk
+ln -sf ../lib/ztos-sdk/bin/ztos-sdk /usr/local/bin/ztos-sdk
+install -Dm644 sdk/runtime/zygote.py /etc/skel/.local/share/ztos/zygote.py
+install -d /etc/skel/.local/share/ztos/lib/ztos
+install -m644 sdk/runtime/ztos/*.py /etc/skel/.local/share/ztos/lib/ztos/
+python3 -m compileall -q /etc/skel/.local/share/ztos/lib >/dev/null || true
+"""
+
+
+def installer_parts(run: Runner, root: Path) -> None:
+    chroot(run, root, INSTALLER_PARTS)
+
+
+def media(run: Runner, root: Path, src: Path) -> None:
+    """ztOS's wallpapers and ringtones: prebuilts/ztos-media, split in parts
+    (ztOSMobile's scripts/pack-media.sh), unpacked as its installer does."""
+    parts = sorted((src / "prebuilts/ztos-media").glob("ztos-media.tar.xz.part*"))
+    if not run.dry_run and not parts:
+        run.log("    no prebuilts/ztos-media in the ztOSMobile checkout: no wallpapers or ringtones")
+        return
+    glob = shlex.quote(str(src / "prebuilts/ztos-media")) + "/ztos-media.tar.xz.part*"
+    run.run(["sh", "-c", f"cat {glob} | tar -C {shlex.quote(str(root))} --no-same-owner -xJf -"], root=True)
+
+
 def android_runtime(run: Runner, root: Path, src: Path) -> None:
     """ztOSAndroidRuntimeV1 (ATL, ART, bionic_translation: Android apps as
     Linux processes, without binder), as ztOSMobile's installer ships it: its
@@ -249,6 +305,7 @@ def overlay(run: Runner, root: Path, src: Path, device_overlay: Path | None) -> 
         if run.dry_run or f.exists():
             run.run(["install", "-D", "-m", "755" if "/bin/" in rel or "/sbin/" in rel else "644",
                      f, root / rel], root=True)
+    media(run, root, src)
     if device_overlay is not None and (run.dry_run or device_overlay.is_dir()):
         run.run(["cp", "-a", "--no-preserve=ownership", f"{device_overlay}/.", root], root=True)
 
@@ -283,6 +340,13 @@ systemctl enable zboot-usb-gadget >/dev/null 2>&1 || true
 systemctl enable ztos-iald >/dev/null 2>&1 || echo "note: no unit ztos-iald in this root"
 # ztMETRO's clocks: without it the GPU rests at its lowest step and every animation lags
 systemctl enable zrnperfd >/dev/null 2>&1 || echo "note: no unit zrnperfd in this root"
+# the rest of the services ztOSMobile's installer turns on: names through resolved
+# (NetworkManager hands it each network's DNS), crash logs kept, the sensor
+# framework, the update check
+for u in systemd-resolved systemd-pstore ztos-pstore-keep ztoscoresensorframework ztos-update-check.timer; do
+	systemctl enable "$u" >/dev/null 2>&1 || echo "note: no unit $u in this root"
+done
+update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 {''.join(f'systemctl enable {d} >/dev/null 2>&1 || echo "note: no unit {d} in this root"' + chr(10) for d in daemons)}
 if [ -x /usr/local/sbin/zboot-session ]; then
 	sed -i "s|^command = .*|command = \\"/usr/local/bin/ztmetro-session\\"|" /etc/greetd/config.toml
@@ -293,6 +357,9 @@ if [ -n '{key}' ]; then
 	chown {DEFAULT_USER}: /home/{DEFAULT_USER}/.ssh/authorized_keys; chmod 600 /home/{DEFAULT_USER}/.ssh/authorized_keys
 fi
 """)
+    # resolved's stub as resolv.conf, as the installer leaves it; from outside,
+    # because arch-chroot mounts the host's resolv.conf over it inside
+    run.run(["ln", "-sfn", "/run/systemd/resolve/stub-resolv.conf", root / "etc/resolv.conf"], root=True)
 
 
 def package_list(f: Path | None) -> list[str]:
