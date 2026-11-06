@@ -264,7 +264,7 @@ def test_dry_run_installs_the_rest_of_what_the_installer_does(tmp_path):
     config = next(i for i, c in enumerate(flat) if "useradd" in c)
     assert parts < config and media < config       # skel before the user is made
     for unit in ("systemd-resolved", "systemd-pstore", "ztos-pstore-keep", "ztos-update-check.timer",
-                 "systemd-timesyncd"):
+                 "systemd-timesyncd", "ztoscorenetworking-mm"):
         assert unit in flat[config], unit
     enabled = [l for l in flat[config].splitlines() if l.startswith(("for u in", "systemctl enable"))]
     assert not any("ztoscoresensorframework" in l for l in enabled)    # the S9's hardware, its layer's to enable

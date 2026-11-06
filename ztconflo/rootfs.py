@@ -345,8 +345,10 @@ systemctl enable zrnperfd >/dev/null 2>&1 || echo "note: no unit zrnperfd in thi
 # check. Not ztoscoresensorframework: its components (zrn-* modules, Samsung's
 # sensor hub and modem) are the S9's, and it looks for the S9's sensor hub on
 # any phone; the S9's device layer enables it. And the time from the network:
-# phones like these keep no time while off (the RTC reads 1970)
-for u in systemd-resolved systemd-pstore ztos-pstore-keep ztos-update-check.timer systemd-timesyncd; do
+# phones like these keep no time while off (the RTC reads 1970). And the modem
+# for the shell, Phone and Messaging over ModemManager (ztoscorenetworkingd-mm):
+# a postmarketOS phone's modem is ModemManager's, not the S9's AT port
+for u in systemd-resolved systemd-pstore ztos-pstore-keep ztos-update-check.timer systemd-timesyncd ztoscorenetworking-mm; do
 	systemctl enable "$u" >/dev/null 2>&1 || echo "note: no unit $u in this root"
 done
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
