@@ -40,7 +40,9 @@ GENERIC_OVERLAY = [
 
 def pacman_conf(work: Path) -> Path:
     """An aarch64 pacman.conf for pacstrap on the x86_64 host, with its own
-    keyring so signatures are checked against Arch Linux ARM's keys."""
+    keyring so signatures are checked against Arch Linux ARM's keys. The same
+    repos as Arch Linux ARM's own pacman.conf, aur too: pacstrap syncs only
+    these, and pacman -S in the root stops at a repo it has no database for."""
     conf = work / "pacman-aarch64.conf"
     conf.write_text(f"""[options]
 Architecture = aarch64
@@ -55,6 +57,8 @@ Server = {ALARM_MIRROR}
 [extra]
 Server = {ALARM_MIRROR}
 [alarm]
+Server = {ALARM_MIRROR}
+[aur]
 Server = {ALARM_MIRROR}
 """)
     return conf

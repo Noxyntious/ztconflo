@@ -183,3 +183,11 @@ def test_dry_run_installs_ztos_packages_and_apps(tmp_path):
     ztmetro = next(i for i, c in enumerate(flat) if "cd /usr/src/ztos/ztmetro" in c)
     apps = next(i for i, c in enumerate(flat) if "os/apps/welcome os/apps/updates" in c)
     assert ztmetro < apps
+
+
+def test_pacstrap_syncs_every_repo_the_root_lists(tmp_path):
+    # Arch Linux ARM's pacman.conf lists aur; without its database the ATL
+    # install's pacman -S stops with "could not find database"
+    from ztconflo.rootfs import pacman_conf
+    repos = [l for l in pacman_conf(tmp_path).read_text().splitlines() if l.startswith("[") and l != "[options]"]
+    assert repos == ["[core]", "[extra]", "[alarm]", "[aur]"]
