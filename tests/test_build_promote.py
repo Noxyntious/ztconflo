@@ -176,6 +176,8 @@ def test_dry_run_installs_the_android_runtime(tmp_path):
     copy = next(i for i, c in enumerate(flat) if "ztOSAndroidRuntimeV1/packages/" in c)
     install = next(i for i, c in enumerate(flat) if "android-runtime/install-runtime.sh /usr/local" in c)
     assert copy < install
+    # the build's root is no mount point: pacman's space check off, and back on however it ends
+    assert "#CheckSpace" in flat[install] and "trap" in flat[install]
 
 
 def test_without_the_android_runtime_the_build_goes_on(tmp_path):
