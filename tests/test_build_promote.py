@@ -157,6 +157,8 @@ def test_dry_run_installs_the_android_runtime(tmp_path):
     assert copy < install
     # the build's root is no mount point: pacman's space check off, and back on however it ends
     assert "#CheckSpace" in flat[install] and "trap" in flat[install]
+    # a fresh root has no keyring until configure: the install sets it up first
+    assert flat[install].index("pacman-key --init") < flat[install].index("install-runtime.sh")
 
 
 def test_without_the_android_runtime_the_build_goes_on(tmp_path):
