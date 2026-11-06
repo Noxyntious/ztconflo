@@ -269,6 +269,7 @@ def test_dry_run_installs_the_rest_of_what_the_installer_does(tmp_path):
     enabled = [l for l in flat[config].splitlines() if l.startswith(("for u in", "systemctl enable"))]
     assert not any("ztoscoresensorframework" in l for l in enabled)    # the S9's hardware, its layer's to enable
     assert any(c.startswith("sudo ln -sfn /run/systemd/resolve/stub-resolv.conf") for c in flat[config:])
+    assert "locale-gen" in flat[config] and "LANG=en_US.UTF-8" in flat[config]
 
 
 def test_without_ztos_media_the_build_goes_on(tmp_path):
