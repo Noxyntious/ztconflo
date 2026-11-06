@@ -233,3 +233,11 @@ def test_dry_run_plans_the_pacman_sandbox(tmp_path):
     build(resolve("oneplus-enchilada", reg, Pmaports(FIX)), s, reg, run)
     flat = [" ".join(map(str, c)) for c in run.commands]
     assert any("DisableSandboxFilesystem" in c and c.endswith("etc/pacman.conf") for c in flat)
+
+
+def test_pacstrap_syncs_every_repo_the_root_lists(tmp_path):
+    # Arch Linux ARM's pacman.conf lists aur; without its database the ATL
+    # install's pacman -S stops with "could not find database"
+    from ztconflo.rootfs import pacman_conf
+    repos = [l for l in pacman_conf(tmp_path).read_text().splitlines() if l.startswith("[") and l != "[options]"]
+    assert repos == ["[core]", "[extra]", "[alarm]", "[aur]"]
