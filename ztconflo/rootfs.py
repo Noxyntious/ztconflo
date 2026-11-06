@@ -195,7 +195,12 @@ def android_runtime(run: Runner, root: Path, src: Path) -> None:
     run.run(["mkdir", "-p", keep], root=True)
     run.run(["rsync", "-a", "--delete", "--chown=0:0", f"{packages}/", f"{keep / 'packages'}/"], root=True)
     run.run(["install", "-m", "755", script, keep / "install-runtime.sh"], root=True)
-    chroot(run, root, "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
+    # pacman's free-space check needs the root to be a mount point, which the
+    # build's root is not ("could not determine cachedir mount point"): off for
+    # the install only, and back on however it ends
+    chroot(run, root, "sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf\n"
+                      "trap \"sed -i 's/^#CheckSpace/CheckSpace/' /etc/pacman.conf\" EXIT\n"
+                      "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
                       "/usr/local/share/ztos/android-runtime/packages")
 
 
