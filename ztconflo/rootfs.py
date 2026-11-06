@@ -226,7 +226,11 @@ def android_runtime(run: Runner, root: Path, src: Path) -> None:
     # pacman's free-space check needs the root to be a mount point, which the
     # build's root is not ("could not determine cachedir mount point"): off for
     # the install only, and back on however it ends
-    chroot(run, root, "sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf\n"
+    # pacman checks the packages it downloads: the root's keyring, which
+    # configure (step 4, after this) would otherwise be first to set up
+    chroot(run, root, "[ -s /etc/pacman.d/gnupg/pubring.gpg ] || "
+                      "{ pacman-key --init && pacman-key --populate archlinuxarm; } >/dev/null\n"
+                      "sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf\n"
                       "trap \"sed -i 's/^#CheckSpace/CheckSpace/' /etc/pacman.conf\" EXIT\n"
                       "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
                       "/usr/local/share/ztos/android-runtime/packages")
