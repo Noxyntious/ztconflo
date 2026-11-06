@@ -278,3 +278,13 @@ def test_without_ztos_media_the_build_goes_on(tmp_path):
     run = Runner(dry_run=False, log=lines.append)
     media(run, tmp_path / "root", tmp_path / "old-checkout")
     assert run.commands == [] and "no wallpapers" in lines[0]
+
+
+def test_promote_prepares_cannot_hang():
+    # speaker-test was seen to ignore timeout's TERM after the tone: promote
+    # waited forever. Every timeout in a prepare kills after it
+    import re
+    from ztconflo.promote import CHECKS
+    for c in CHECKS:
+        for t in re.findall(r"timeout [^ ]+(?: [^ ]+)?", c.prepare):
+            assert t.startswith("timeout -k "), (c.key, t)

@@ -47,12 +47,14 @@ CHECKS = [
           question="Did the phone buzz just now?",
           prepare="dev=$(for e in /sys/class/input/event*; do c=$(cat $e/device/capabilities/ff 2>/dev/null); "
                   "[ -n \"$c\" ] && [ \"$c\" != 0 ] && echo /dev/input/${e##*/} && break; done); "
-                  "[ -n \"$dev\" ] && command -v fftest >/dev/null && (echo 0 | timeout 2 fftest $dev >/dev/null 2>&1) "
+                  "[ -n \"$dev\" ] && command -v fftest >/dev/null && (echo 0 | timeout -k 2 2 fftest $dev >/dev/null 2>&1) "
                   "|| true"),
+    # -k: speaker-test can sit in its drain after the tone and not take the
+    # TERM timeout sends; without a KILL after it the check waits forever
     Check("audio", "Audio", "tested",
           question="A test tone is playing. Did you hear it?",
-          prepare="timeout 3 speaker-test -t sine -f 660 -l 1 >/dev/null 2>&1 || "
-                  "timeout 3 pw-play /usr/share/sounds/freedesktop/stereo/bell.oga >/dev/null 2>&1 || true"),
+          prepare="timeout -k 2 3 speaker-test -t sine -f 660 -l 1 >/dev/null 2>&1 || "
+                  "timeout -k 2 3 pw-play /usr/share/sounds/freedesktop/stereo/bell.oga >/dev/null 2>&1 || true"),
     Check("battery", "Battery reporting", "tested",
           "cat /sys/class/power_supply/*/capacity 2>/dev/null | head -1", lambda o: o.strip().isdigit()),
     Check("suspend", "Suspend and resume", "tested",
