@@ -290,6 +290,10 @@ def configure(run: Runner, root: Path, entry: dict, ssh_key: Path | None) -> Non
     key = ssh_key.read_text().strip() if ssh_key and ssh_key.is_file() else ""
     chroot(run, root, f"""
 echo ztos-{codename} > /etc/hostname
+# a UTF-8 language, as ztOSMobile's installer sets (Settings > date + region changes it)
+sed -i '/^#en_US.UTF-8 UTF-8/s/^#//' /etc/locale.gen
+locale-gen >/dev/null
+[ -f /etc/locale.conf ] || echo LANG=en_US.UTF-8 > /etc/locale.conf
 pacman-key --init >/dev/null 2>&1 && pacman-key --populate archlinuxarm >/dev/null 2>&1 || true
 id {DEFAULT_USER} >/dev/null 2>&1 || useradd -m -G wheel,video,input,audio -s /bin/bash {DEFAULT_USER}
 echo '{DEFAULT_USER}:{DEFAULT_USER}' | chpasswd
