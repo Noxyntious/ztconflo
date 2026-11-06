@@ -97,9 +97,10 @@ fi
 # stays there; flash.sh only waits for its fastboot and writes the disk image.
 LK2ND_FASTBOOT = r"""
 # lk2nd stays on BOOT (put there once: fastboot flash boot lk2nd.img) and boots
-# the kernel from the boot partition in rootfs.img; only {rootfs} is written.
+# the kernel from the boot partition in rootfs.img; only {rootfs} is written,
+# from the phone's own fastboot (Vol-Down at power-on) or lk2nd's.
 if ! fastboot devices 2>/dev/null | grep -q fastboot; then
-	echo "Put the phone in lk2nd's fastboot: power it off, then hold Vol-Down while pressing Power"
+	echo "Put the phone in fastboot: power it off, then hold Vol-Down while pressing Power"
 	until fastboot devices 2>/dev/null | grep -q fastboot; do sleep 1; done
 fi
 """

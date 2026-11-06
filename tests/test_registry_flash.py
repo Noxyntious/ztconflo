@@ -89,7 +89,8 @@ def test_lk2nd_phones_with_fastboot_only_write_userdata():
     # stays; flash.sh must not fall back to Samsung's heimdall or write BOOT
     s = script(entry("fastboot", lk2nd="lk2nd-msm8953"))
     assert "heimdall" not in s
-    assert "lk2nd's fastboot" in s
+    # Vol-Down at power-on is the phone's own fastboot, which writes userdata as well
+    assert 'echo "Put the phone in fastboot: power it off, then hold Vol-Down while pressing Power"' in s
     assert "fastboot flash userdata rootfs.img" in s
     assert "fastboot flash boot" not in s.replace("fastboot flash boot lk2nd.img", "")
     assert "Overwrites: userdata." in s
