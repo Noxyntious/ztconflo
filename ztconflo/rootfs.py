@@ -313,9 +313,12 @@ systemctl enable ztos-iald >/dev/null 2>&1 || echo "note: no unit ztos-iald in t
 # ztMETRO's clocks: without it the GPU rests at its lowest step and every animation lags
 systemctl enable zrnperfd >/dev/null 2>&1 || echo "note: no unit zrnperfd in this root"
 # the rest of the services ztOSMobile's installer turns on: names through resolved
-# (NetworkManager hands it each network's DNS), crash logs kept, the sensor
-# framework, the update check
-for u in systemd-resolved systemd-pstore ztos-pstore-keep ztoscoresensorframework ztos-update-check.timer; do
+# (NetworkManager hands it each network's DNS), crash logs kept, the update
+# check. Not ztoscoresensorframework: its components (zrn-* modules, Samsung's
+# sensor hub and modem) are the S9's, and it looks for the S9's sensor hub on
+# any phone; the S9's device layer enables it. And the time from the network:
+# phones like these keep no time while off (the RTC reads 1970)
+for u in systemd-resolved systemd-pstore ztos-pstore-keep ztos-update-check.timer systemd-timesyncd; do
 	systemctl enable "$u" >/dev/null 2>&1 || echo "note: no unit $u in this root"
 done
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
