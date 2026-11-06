@@ -115,3 +115,13 @@ def test_native_entries_need_the_repository(tmp_path):
     with pytest.raises(Exit) as err:
         fetch_kernel(Runner(dry_run=True, log=lambda _: None), e, Settings(), tmp_path)
     assert err.value.code == Exit.BUILD_FAILED
+
+
+def test_promote_prepares_cannot_hang():
+    # speaker-test was seen to ignore timeout's TERM after the tone: promote
+    # waited forever. Every timeout in a prepare kills after it
+    import re
+    from ztconflo.promote import CHECKS
+    for c in CHECKS:
+        for t in re.findall(r"timeout [^ ]+(?: [^ ]+)?", c.prepare):
+            assert t.startswith("timeout -k "), (c.key, t)
