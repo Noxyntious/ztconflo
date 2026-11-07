@@ -183,6 +183,7 @@ def build(res: Resolution, settings: Settings, registry: Registry, run: Runner) 
     rootfs.system_apps(run, root)
     rootfs.installer_parts(run, root)
     rootfs.overlay(run, root, settings.ztos_src, entry.folder / "overlay" if entry.folder else None)
+    rootfs.device_userspace(run, root, entry, entry.folder, settings.jobs)
     run.step("3c. Android apps (ztOSAndroidRuntimeV1: ATL)")
     rootfs.android_runtime(run, root, settings.ztos_src)
 
@@ -361,6 +362,7 @@ def build_gsi(res: Resolution, settings: Settings, registry: Registry, run: Runn
         # no download sandbox, which wants Landlock from the kernel running pacman
         run.run(["arch-chroot", root, "pacman", "-S", "--needed", "--noconfirm", "--disable-sandbox",
                  *extra_pkgs], root=True)
+    rootfs.device_userspace(run, root, entry, entry.folder, settings.jobs)
     rootfs.pacman_sandbox(run, root, *trees)
     rootfs.configure(run, root, entry, Path.home() / ".ssh/id_ed25519.pub")
     ial_check(run, root)

@@ -17,6 +17,7 @@ SECTIONS = ("device", "source.pmos", "source.native", "kernel", "boot", "userspa
 BINDERS = ("binderfs", "none")
 BACKENDS = ("generic", "vendor", "service", "none")
 _INTERFACE = re.compile(r"^[A-Z][A-Za-z]*[0-9]+$")        # Display1, CallAudio1
+_BUILD_DIR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")  # userspace/<name>, no paths
 REQUIRED = {
     "device": ("codename", "name", "arch", "status", "origin"),
     "boot": ("flash_method", "rootfs_target"),
@@ -65,6 +66,20 @@ def validate(data: dict, where: str = "device.toml") -> None:
     if dev["origin"] == "native" and has_pmos:
         raise ValueError(f"{where}: origin = \"native\" must not have [source.pmos]")
     _validate_ial(data, where)
+    _validate_userspace(data, where)
+
+
+def _validate_userspace(data: dict, where: str) -> None:
+    """[userspace].build: folders of the entry's userspace/ that the build makes
+    in the root (make, make install), with build_deps from pacman first."""
+    us = data.get("userspace", {})
+    for key in ("daemons", "build", "build_deps"):
+        v = us.get(key, [])
+        if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
+            raise ValueError(f"{where}: [userspace].{key} must be a list of strings")
+    for name in us.get("build", []):
+        if not _BUILD_DIR.match(name):
+            raise ValueError(f"{where}: [userspace].build: '{name}' must be a folder name in userspace/")
 
 
 def _validate_ial(data: dict, where: str) -> None:

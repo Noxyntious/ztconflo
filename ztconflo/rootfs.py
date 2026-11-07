@@ -4,6 +4,7 @@ firmware, ztMETRO built from the ztOSMobile sources, then configuration.
 
 Runs on an x86_64 Arch host; aarch64 programs in the new root run through
 qemu-user (binfmt), so `arch-chroot` works as on the phone."""
+import os
 import shlex
 import tarfile
 import urllib.request
@@ -264,6 +265,16 @@ def media(run: Runner, root: Path, src: Path) -> None:
     run.run(["sh", "-c", f"cat {glob} | tar -C {shlex.quote(str(root))} --no-same-owner -xJf -"], root=True)
 
 
+# pacman in the build's root before configure: the root's keyring, which
+# configure (step 4) would otherwise be first to set up, and no free-space
+# check, which needs the root to be a mount point ("could not determine
+# cachedir mount point"): off while the script runs, back on however it ends
+PACMAN_READY = ("[ -s /etc/pacman.d/gnupg/pubring.gpg ] || "
+                "{ pacman-key --init && pacman-key --populate archlinuxarm; } >/dev/null\n"
+                "sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf\n"
+                "trap \"sed -i 's/^#CheckSpace/CheckSpace/' /etc/pacman.conf\" EXIT\n")
+
+
 def android_runtime(run: Runner, root: Path, src: Path) -> None:
     """ztOSAndroidRuntimeV1 (ATL, ART, bionic_translation: Android apps as
     Linux processes, without binder), as ztOSMobile's installer ships it: its
@@ -279,17 +290,46 @@ def android_runtime(run: Runner, root: Path, src: Path) -> None:
     run.run(["mkdir", "-p", keep], root=True)
     run.run(["rsync", "-a", "--delete", "--chown=0:0", f"{packages}/", f"{keep / 'packages'}/"], root=True)
     run.run(["install", "-m", "755", script, keep / "install-runtime.sh"], root=True)
-    # pacman's free-space check needs the root to be a mount point, which the
-    # build's root is not ("could not determine cachedir mount point"): off for
-    # the install only, and back on however it ends
-    # pacman checks the packages it downloads: the root's keyring, which
-    # configure (step 4, after this) would otherwise be first to set up
-    chroot(run, root, "[ -s /etc/pacman.d/gnupg/pubring.gpg ] || "
-                      "{ pacman-key --init && pacman-key --populate archlinuxarm; } >/dev/null\n"
-                      "sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf\n"
-                      "trap \"sed -i 's/^#CheckSpace/CheckSpace/' /etc/pacman.conf\" EXIT\n"
-                      "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
-                      "/usr/local/share/ztos/android-runtime/packages")
+    chroot(run, root, PACMAN_READY + "bash /usr/local/share/ztos/android-runtime/install-runtime.sh "
+                                     "/usr/local/share/ztos/android-runtime/packages")
+
+
+def device_userspace(run: Runner, root: Path, entry: dict, folder: Path | None, jobs: int) -> None:
+    """What a phone needs built from source that Arch Linux ARM does not ship
+    (land: a ModemManager its old modem firmware survives): each folder that
+    [userspace].build names, from the entry's userspace/, built in the root
+    under qemu by its own Makefile (make, then make install), never on the
+    phone. [userspace].build_deps are installed from pacman first."""
+    us = entry.get("userspace", {})
+    names = us.get("build", [])
+    if not names or folder is None:
+        return
+    for name in names:
+        if not run.dry_run and not (folder / "userspace" / name / "Makefile").is_file():
+            raise Exit(Exit.BUILD_FAILED, f"[userspace].build names {name}, but "
+                                          f"{folder / 'userspace' / name}/Makefile is missing")
+    # arch-chroot mounts the host's DNS over the root's resolv.conf, which it
+    # cannot do once configure has made that systemd-resolved's stub symlink
+    # (dangling outside the phone): a plain copy while building, the link after
+    rc = root / "etc/resolv.conf"
+    link = os.readlink(rc) if not run.dry_run and rc.is_symlink() else None
+    if link is not None:
+        run.run(["rm", "-f", rc], root=True)
+        run.run(["cp", "/etc/resolv.conf", rc], root=True)
+    try:
+        deps = us.get("build_deps", [])
+        if deps:
+            chroot(run, root, PACMAN_READY + "pacman -S --needed --noconfirm --disable-sandbox "
+                                             + " ".join(map(shlex.quote, deps)))
+        dest = root / "usr/src/ztos-device"
+        for name in names:
+            src = folder / "userspace" / name
+            run.run(["mkdir", "-p", dest / name], root=True)
+            run.run(["rsync", "-a", "--delete", "--exclude", "build", f"{src}/", f"{dest / name}/"], root=True)
+            chroot(run, root, f"cd /usr/src/ztos-device/{shlex.quote(name)}\nmake -j{jobs}\nmake install")
+    finally:
+        if link is not None:
+            run.run(["ln", "-sfn", link, rc], root=True)
 
 
 def overlay(run: Runner, root: Path, src: Path, device_overlay: Path | None) -> None:

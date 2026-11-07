@@ -102,3 +102,19 @@ def test_samsung_lk2nd_phones_keep_heimdall():
     s = script(data)
     assert "heimdall flash --BOOT lk2nd.img" in s
     assert "Overwrites: BOOT (lk2nd), userdata." in s
+
+
+def test_userspace_build_names_folders_only():
+    ok = entry()
+    ok["userspace"] |= {"build": ["modemmanager"], "build_deps": ["meson", "glib2-devel"]}
+    validate(ok)
+    assert tomllib.loads(dumps(ok)) == ok
+    for bad_build in (["../escape"], ["a/b"], "modemmanager", [""]):
+        bad = entry()
+        bad["userspace"]["build"] = bad_build
+        with pytest.raises(ValueError):
+            validate(bad)
+    bad = entry()
+    bad["userspace"]["build_deps"] = "meson"
+    with pytest.raises(ValueError):
+        validate(bad)

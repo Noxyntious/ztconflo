@@ -288,3 +288,56 @@ def test_promote_prepares_cannot_hang():
     for c in CHECKS:
         for t in re.findall(r"timeout [^ ]+(?: [^ ]+)?", c.prepare):
             assert t.startswith("timeout -k "), (c.key, t)
+
+
+def test_device_userspace_builds_in_the_root(tmp_path):
+    # land's ModemManager: [userspace].build folders are made in the root (under
+    # qemu, never on the phone), after its build_deps, with pacman made usable
+    from ztconflo import rootfs
+    folder = tmp_path / "xiaomi-land"
+    (folder / "userspace/modemmanager").mkdir(parents=True)
+    (folder / "userspace/modemmanager/Makefile").write_text("all:\ninstall:\n")
+    entry = {"userspace": {"build": ["modemmanager"], "build_deps": ["meson", "glib2-devel"]}}
+    run = Runner(dry_run=True, log=lambda _: None)
+    rootfs.device_userspace(run, tmp_path / "root", entry, folder, 4)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    deps = next(i for i, c in enumerate(flat) if "pacman -S --needed" in c and "glib2-devel" in c)
+    assert "pacman-key --init" in flat[deps] and "CheckSpace" in flat[deps]
+    copy = next(i for i, c in enumerate(flat) if "rsync" in c and "userspace/modemmanager/" in c)
+    make = next(i for i, c in enumerate(flat) if "cd /usr/src/ztos-device/modemmanager" in c)
+    assert deps < copy < make
+    assert "make -j4" in flat[make] and "make install" in flat[make]
+
+
+def test_device_userspace_is_off_without_build(tmp_path):
+    from ztconflo import rootfs
+    run = Runner(dry_run=True, log=lambda _: None)
+    rootfs.device_userspace(run, tmp_path / "root", {"userspace": {"daemons": ["rmtfs"]}}, tmp_path, 4)
+    assert run.commands == []
+
+
+def test_device_userspace_needs_the_makefile(tmp_path):
+    from ztconflo import rootfs
+    run = Runner(dry_run=False, log=lambda _: None)
+    with pytest.raises(Exit):
+        rootfs.device_userspace(run, tmp_path / "root", {"userspace": {"build": ["mm"], "build_deps": ["meson"]}},
+                                tmp_path, 4)
+    assert run.commands == []
+
+
+def test_device_userspace_lends_a_resolv_conf_to_a_configured_root(tmp_path):
+    # a root configure already made has resolv.conf -> systemd-resolved's stub,
+    # dangling on the build host: arch-chroot cannot mount DNS over it
+    from ztconflo import rootfs
+    folder, root = tmp_path / "land", tmp_path / "root"
+    (folder / "userspace/mm").mkdir(parents=True)
+    (folder / "userspace/mm/Makefile").write_text("all:\n")
+    (root / "etc").mkdir(parents=True)
+    (root / "etc/resolv.conf").symlink_to("../run/systemd/resolve/stub-resolv.conf")
+    lines = []
+    run = Runner(dry_run=False, log=lines.append)
+    run.run = lambda cmd, **kw: run.commands.append(cmd)
+    rootfs.device_userspace(run, root, {"userspace": {"build": ["mm"]}}, folder, 2)
+    flat = [" ".join(map(str, c)) for c in run.commands]
+    assert flat[0].startswith("rm -f") and flat[1].startswith("cp /etc/resolv.conf")
+    assert flat[-1] == f"ln -sfn ../run/systemd/resolve/stub-resolv.conf {root}/etc/resolv.conf"
